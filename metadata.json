@@ -1,0 +1,6 @@
+{
+  "name": "Top File Manager",
+  "description": "A premium, powerful, fast native Android file manager with dual-pane, zip/unzip, secure vault, smart cleaner, duplicate finder, and storage analyzer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

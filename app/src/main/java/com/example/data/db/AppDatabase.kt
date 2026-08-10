@@ -1,0 +1,40 @@
+package com.example.data.db
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+
+@Database(
+    entities = [
+        RecycleBinEntity::class,
+        FavoriteEntity::class,
+        BookmarkEntity::class,
+        VaultEntity::class
+    ],
+    version = 1,
+    exportSchema = false
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun recycleBinDao(): RecycleBinDao
+    abstract fun favoriteDao(): FavoriteDao
+    abstract fun bookmarkDao(): BookmarkDao
+    abstract fun vaultDao(): VaultDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "top_file_manager.db"
+                ).fallbackToDestructiveMigration().build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
