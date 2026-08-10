@@ -234,15 +234,29 @@ class FileEngine(private val context: Context) {
         }
     }
 
+    private val categoryCache = java.util.concurrent.ConcurrentHashMap<CategoryType, Pair<Long, List<FileItem>>>()
+    private val CACHE_TTL_MS = 15_000L
+
+    fun clearCategoryCache() {
+        categoryCache.clear()
+    }
+
     suspend fun getFilesByCategory(
         category: CategoryType,
         showHidden: Boolean = false,
         sortOption: FileSortOption = FileSortOption()
     ): List<FileItem> = withContext(Dispatchers.IO) {
         if (category == CategoryType.ALL) return@withContext emptyList()
+
+        val now = System.currentTimeMillis()
+        val cached = categoryCache[category]
+        if (cached != null && (now - cached.first) < CACHE_TTL_MS) {
+            return@withContext sortFileItems(cached.second, sortOption)
+        }
+
         val itemsMap = mutableMapOf<String, FileItem>()
 
-        // 1. Query Android MediaStore ContentResolver for fast indexing across device
+        // 1. Fast ContentResolver MediaStore indexing
         runCatching {
             val uriAndColumn = when (category) {
                 CategoryType.IMAGES -> Pair(
@@ -284,33 +298,49 @@ class FileEngine(private val context: Context) {
             }
         }
 
-        // 2. Perform direct storage file system walk to catch non-indexed files / folders
-        val storageRoot = Environment.getExternalStorageDirectory()
-        if (storageRoot != null && storageRoot.exists()) {
-            fun walk(dir: File, depth: Int) {
-                if (depth > 8 || itemsMap.size > 2000) return
-                val children = dir.listFiles() ?: return
-                for (f in children) {
-                    if (!showHidden && f.name.startsWith(".")) continue
-                    if (f.isFile) {
-                        if (!itemsMap.containsKey(f.absolutePath)) {
-                            val item = createFileItem(f)
-                            if (matchesCategory(item, category)) {
-                                itemsMap[f.absolutePath] = item
-                            }
-                        }
-                    } else if (f.isDirectory) {
-                        if (f.name.equals("Android", ignoreCase = true) && depth == 0) continue
-                        walk(f, depth + 1)
-                    }
-                }
-            }
-
-            walk(storageRoot, 0)
+        // 2. Targeted shallow scanning of standard user folders (max depth 2) to catch recent non-indexed items quickly
+        val targetDirs = when (category) {
+            CategoryType.IMAGES -> listOf("DCIM", "Pictures", "Download", "WhatsApp/Media")
+            CategoryType.VIDEOS -> listOf("DCIM", "Movies", "Pictures", "Download", "WhatsApp/Media")
+            CategoryType.AUDIO -> listOf("Music", "Download", "Podcasts", "Notifications", "Alarms", "Ringtones")
+            CategoryType.DOCUMENTS -> listOf("Documents", "Download", "Books")
+            CategoryType.DOWNLOADS -> listOf("Download", "Downloads")
+            else -> listOf("Download", "Documents", "DCIM", "Pictures")
         }
 
-        val sortedList = itemsMap.values.toList()
-        sortFileItems(sortedList, sortOption)
+        val storageRoot = Environment.getExternalStorageDirectory()
+        if (storageRoot != null && storageRoot.exists()) {
+            for (subDir in targetDirs) {
+                val dir = File(storageRoot, subDir)
+                if (!dir.exists() || !dir.isDirectory) continue
+
+                fun scanShallow(d: File, depth: Int) {
+                    if (depth > 2) return
+                    val children = d.listFiles() ?: return
+                    for (f in children) {
+                        if (!showHidden && f.name.startsWith(".")) continue
+                        if (f.isFile) {
+                            if (!itemsMap.containsKey(f.absolutePath)) {
+                                val item = createFileItem(f)
+                                if (matchesCategory(item, category)) {
+                                    itemsMap[f.absolutePath] = item
+                                }
+                            }
+                        } else if (f.isDirectory) {
+                            if (f.name.equals("Android", ignoreCase = true)) continue
+                            scanShallow(f, depth + 1)
+                        }
+                    }
+                }
+
+                scanShallow(dir, 0)
+            }
+        }
+
+        val fileList = itemsMap.values.toList()
+        categoryCache[category] = Pair(now, fileList)
+
+        sortFileItems(fileList, sortOption)
     }
 
     suspend fun createFolder(parentPath: String, folderName: String): Result<FileItem> = withContext(Dispatchers.IO) {

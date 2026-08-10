@@ -94,6 +94,7 @@ class FileBrowserViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun navigateTo(path: String) {
+        activeCategoryFilter.value = null
         val activeId = _activeTabId.value
         val tabList = _tabs.value.toMutableList()
         val index = tabList.indexOfFirst { it.id == activeId }

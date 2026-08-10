@@ -141,6 +141,9 @@ fun MainAppNavHost(
                             selected = isSelected,
                             modifier = Modifier.testTag("nav_item_${screen.route}"),
                             onClick = {
+                                if (screen.route == NavScreen.Browser.route) {
+                                    browserViewModel.activeCategoryFilter.value = null
+                                }
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -166,13 +169,14 @@ fun MainAppNavHost(
                 HomeScreen(
                     viewModel = homeViewModel,
                     onNavigateToStorage = { path ->
+                        browserViewModel.activeCategoryFilter.value = null
                         browserViewModel.navigateTo(path)
                         navController.navigate(NavScreen.Browser.route)
                     },
                     onNavigateToCategory = { category ->
                         val root = Environment.getExternalStorageDirectory()?.absolutePath ?: ""
-                        browserViewModel.activeCategoryFilter.value = category
                         browserViewModel.navigateTo(root)
+                        browserViewModel.activeCategoryFilter.value = category
                         navController.navigate(NavScreen.Browser.route)
                     },
                     onNavigateToTools = { navController.navigate(NavScreen.Tools.route) },
@@ -195,7 +199,10 @@ fun MainAppNavHost(
                             val encoded = URLEncoder.encode(fileItem.path, StandardCharsets.UTF_8.toString())
                             navController.navigate("text_editor/$encoded")
                         } else {
-                            openFileExternal(context, fileItem.path, fileItem.mimeType)
+                            openFileExternal(context, fileItem.path, fileItem.mimeType) { filePath ->
+                                val encoded = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
+                                navController.navigate("text_editor/$encoded")
+                            }
                         }
                     }
                 )
@@ -244,12 +251,36 @@ fun MainAppNavHost(
     }
 }
 
-private fun openFileExternal(context: android.content.Context, filePath: String, mimeType: String) {
+private fun openFileExternal(
+    context: android.content.Context,
+    filePath: String,
+    rawMimeType: String,
+    onFallbackText: ((String) -> Unit)? = null
+) {
     try {
         val file = File(filePath)
         if (!file.exists()) {
             Toast.makeText(context, "File does not exist", Toast.LENGTH_SHORT).show()
             return
+        }
+
+        val ext = file.extension.lowercase()
+        var mimeType = rawMimeType.lowercase()
+
+        // Precise MimeType mapping for Intent "Open With" app chooser
+        if (mimeType.isEmpty() || mimeType == "*/*") {
+            mimeType = when {
+                ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic") -> "image/*"
+                ext in listOf("mp4", "mkv", "webm", "avi", "mov", "3gp", "flv") -> "video/*"
+                ext in listOf("mp3", "wav", "flac", "aac", "ogg", "m4a") -> "audio/*"
+                ext == "pdf" -> "application/pdf"
+                ext in listOf("doc", "docx") -> "application/msword"
+                ext in listOf("xls", "xlsx") -> "application/vnd.ms-excel"
+                ext in listOf("ppt", "pptx") -> "application/vnd.ms-powerpoint"
+                ext in listOf("txt", "json", "xml", "csv", "md", "html", "log") -> "text/plain"
+                ext == "apk" -> "application/vnd.android.package-archive"
+                else -> "*/*"
+            }
         }
 
         val uri = FileProvider.getUriForFile(
@@ -261,8 +292,27 @@ private fun openFileExternal(context: android.content.Context, filePath: String,
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Open with"))
+
+        val chooserIntent = Intent.createChooser(intent, "Open with").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val packageManager = context.packageManager
+        val resolvedActivities = packageManager.queryIntentActivities(intent, 0)
+        val externalApps = resolvedActivities.filter { it.activityInfo.packageName != context.packageName }
+
+        if (externalApps.isNotEmpty()) {
+            context.startActivity(chooserIntent)
+        } else {
+            // If no external app found, attempt built-in text editor for text/doc or show message
+            if (ext in listOf("txt", "json", "xml", "csv", "md", "html", "log", "pdf", "doc", "docx") && onFallbackText != null) {
+                onFallbackText(filePath)
+            } else {
+                context.startActivity(chooserIntent)
+            }
+        }
     } catch (e: Exception) {
         Toast.makeText(context, "Cannot open file: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
     }

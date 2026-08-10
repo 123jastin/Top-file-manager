@@ -73,6 +73,7 @@ fun FileBrowserScreen(
     var showOptionsMenu by remember { mutableStateOf(false) }
     var isDualPane by remember { mutableStateOf(false) }
     var mediaPreviewFile by remember { mutableStateOf<FileItem?>(null) }
+    var fullScreenImageFile by remember { mutableStateOf<FileItem?>(null) }
 
     // File contextual action menu item
     var activeContextFile by remember { mutableStateOf<FileItem?>(null) }
@@ -420,16 +421,7 @@ fun FileBrowserScreen(
                                     } else if (file.isDirectory) {
                                         viewModel.navigateTo(file.path)
                                     } else {
-                                        val ext = file.extension.lowercase()
-                                        val mime = file.mimeType.lowercase()
-                                        val isMedia = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
-                                                ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "mp4", "mkv", "webm", "mov", "avi", "mp3", "wav", "flac", "m4a", "aac", "ogg")
-
-                                        if (isMedia) {
-                                            mediaPreviewFile = file
-                                        } else {
-                                            onOpenFile(file)
-                                        }
+                                        onOpenFile(file)
                                     }
                                 },
                                 onFileLongClick = { file -> viewModel.toggleSelection(file) },
@@ -471,16 +463,7 @@ fun FileBrowserScreen(
                             } else if (file.isDirectory) {
                                 viewModel.navigateTo(file.path)
                             } else {
-                                val ext = file.extension.lowercase()
-                                val mime = file.mimeType.lowercase()
-                                val isMedia = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
-                                        ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "mp4", "mkv", "webm", "mov", "avi", "mp3", "wav", "flac", "m4a", "aac", "ogg")
-
-                                if (isMedia) {
-                                    mediaPreviewFile = file
-                                } else {
-                                    onOpenFile(file)
-                                }
+                                onOpenFile(file)
                             }
                         },
                         onFileLongClick = { file -> viewModel.toggleSelection(file) },
@@ -497,13 +480,38 @@ fun FileBrowserScreen(
                     onDismissRequest = { activeContextFile = null }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Open") },
+                        text = { Text("Open with...") },
                         onClick = {
                             activeContextFile = null
                             if (file.isDirectory) viewModel.navigateTo(file.path) else onOpenFile(file)
                         },
                         leadingIcon = { Icon(Icons.Default.OpenInNew, null) }
                     )
+
+                    val fileExt = file.extension.lowercase()
+                    val fileMime = file.mimeType.lowercase()
+                    val isImg = fileMime.startsWith("image/") || fileExt in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
+                    val isAudVid = fileMime.startsWith("audio/") || fileMime.startsWith("video/") || fileExt in listOf("mp3", "wav", "flac", "m4a", "aac", "mp4", "mkv", "webm", "avi")
+
+                    if (isImg) {
+                        DropdownMenuItem(
+                            text = { Text("View Full Screen") },
+                            onClick = {
+                                activeContextFile = null
+                                fullScreenImageFile = file
+                            },
+                            leadingIcon = { Icon(Icons.Default.Fullscreen, null) }
+                        )
+                    } else if (isAudVid) {
+                        DropdownMenuItem(
+                            text = { Text("Preview in App") },
+                            onClick = {
+                                activeContextFile = null
+                                mediaPreviewFile = file
+                            },
+                            leadingIcon = { Icon(Icons.Default.PlayCircle, null) }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Rename") },
                         onClick = {
@@ -677,6 +685,20 @@ fun FileBrowserScreen(
             },
             onDeleteFile = { target ->
                 mediaPreviewFile = null
+                scope.launch {
+                    viewModel.repository.moveToRecycleBin(target.path)
+                    viewModel.refreshCurrent()
+                }
+            }
+        )
+    }
+
+    if (fullScreenImageFile != null) {
+        FullScreenImageViewerDialog(
+            fileItem = fullScreenImageFile!!,
+            onDismiss = { fullScreenImageFile = null },
+            onDeleteFile = { target ->
+                fullScreenImageFile = null
                 scope.launch {
                     viewModel.repository.moveToRecycleBin(target.path)
                     viewModel.refreshCurrent()
