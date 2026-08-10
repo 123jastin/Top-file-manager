@@ -10,8 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -59,13 +58,12 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Pro Membership Status Banner
+            // App Info Card
             Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("pro_upgrade_banner"),
+                    .fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isProUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -74,29 +72,22 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = "Pro",
-                        tint = Color(0xFFF59E0B),
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = "App Logo",
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(36.dp)
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (isProUser) "Top File Manager Pro Active" else "Upgrade to Pro Version",
+                            text = "Top File Manager",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = if (isProUser) "Ad-free experience enabled." else "Unlock ad-free experience & premium themes.",
-                            style = MaterialTheme.typography.bodySmall
+                            text = "Full Version • All Features Unlocked",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                    }
-                    Button(
-                        onClick = { viewModel.toggleProUser() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isProUser) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text(if (isProUser) "Downgrade" else "Upgrade")
                     }
                 }
             }

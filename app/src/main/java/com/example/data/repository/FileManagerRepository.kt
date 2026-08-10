@@ -115,4 +115,12 @@ class FileManagerRepository(
     suspend fun getRecentFiles(limit: Int = 30): List<FileItem> {
         return fileEngine.getRecentFiles(limit)
     }
+
+    suspend fun getCategoryFiles(category: CategoryType, showHidden: Boolean, sortOption: FileSortOption): List<FileItem> = withContext(Dispatchers.IO) {
+        val rawItems = fileEngine.getFilesByCategory(category, showHidden, sortOption)
+        rawItems.map { item ->
+            val isFav = favoriteDao.isFavorite(item.path)
+            item.copy(isFavorite = isFav)
+        }
+    }
 }

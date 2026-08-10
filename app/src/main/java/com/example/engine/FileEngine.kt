@@ -2,6 +2,8 @@ package com.example.engine
 
 import android.content.Context
 import android.os.Environment
+import android.os.StatFs
+import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import com.example.data.db.AppDatabase
 import com.example.data.db.RecycleBinEntity
@@ -34,12 +36,20 @@ class FileEngine(private val context: Context) {
     fun getStorageLocations(): List<StorageLocation> {
         val locations = mutableListOf<StorageLocation>()
 
-        // Internal Storage
+        // Internal Storage using real StatFs values
         val primaryStorage = Environment.getExternalStorageDirectory()
         if (primaryStorage != null && primaryStorage.exists()) {
-            val total = primaryStorage.totalSpace
-            val free = primaryStorage.freeSpace
-            val used = total - free
+            val (total, free) = try {
+                val stat = StatFs(primaryStorage.path)
+                val blockSize = stat.blockSizeLong
+                val totalBytes = stat.blockCountLong * blockSize
+                val freeBytes = stat.availableBlocksLong * blockSize
+                Pair(totalBytes, freeBytes)
+            } catch (e: Exception) {
+                Pair(primaryStorage.totalSpace, primaryStorage.freeSpace)
+            }
+            val used = (total - free).coerceAtLeast(0L)
+
             locations.add(
                 StorageLocation(
                     id = "internal",
@@ -222,6 +232,85 @@ class FileEngine(private val context: Context) {
             CategoryType.VAULT -> item.isVault
             CategoryType.ALL -> true
         }
+    }
+
+    suspend fun getFilesByCategory(
+        category: CategoryType,
+        showHidden: Boolean = false,
+        sortOption: FileSortOption = FileSortOption()
+    ): List<FileItem> = withContext(Dispatchers.IO) {
+        if (category == CategoryType.ALL) return@withContext emptyList()
+        val itemsMap = mutableMapOf<String, FileItem>()
+
+        // 1. Query Android MediaStore ContentResolver for fast indexing across device
+        runCatching {
+            val uriAndColumn = when (category) {
+                CategoryType.IMAGES -> Pair(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    MediaStore.Images.Media.DATA
+                )
+                CategoryType.VIDEOS -> Pair(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    MediaStore.Video.Media.DATA
+                )
+                CategoryType.AUDIO -> Pair(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    MediaStore.Audio.Media.DATA
+                )
+                else -> Pair(
+                    MediaStore.Files.getContentUri("external"),
+                    MediaStore.Files.FileColumns.DATA
+                )
+            }
+
+            context.contentResolver.query(
+                uriAndColumn.first,
+                arrayOf(uriAndColumn.second),
+                null, null, null
+            )?.use { cursor ->
+                val columnIndex = cursor.getColumnIndex(uriAndColumn.second)
+                if (columnIndex != -1) {
+                    while (cursor.moveToNext()) {
+                        val filePath = cursor.getString(columnIndex) ?: continue
+                        val file = File(filePath)
+                        if (file.exists() && file.isFile && (showHidden || !file.isHidden)) {
+                            val item = createFileItem(file)
+                            if (matchesCategory(item, category)) {
+                                itemsMap[file.absolutePath] = item
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Perform direct storage file system walk to catch non-indexed files / folders
+        val storageRoot = Environment.getExternalStorageDirectory()
+        if (storageRoot != null && storageRoot.exists()) {
+            fun walk(dir: File, depth: Int) {
+                if (depth > 8 || itemsMap.size > 2000) return
+                val children = dir.listFiles() ?: return
+                for (f in children) {
+                    if (!showHidden && f.name.startsWith(".")) continue
+                    if (f.isFile) {
+                        if (!itemsMap.containsKey(f.absolutePath)) {
+                            val item = createFileItem(f)
+                            if (matchesCategory(item, category)) {
+                                itemsMap[f.absolutePath] = item
+                            }
+                        }
+                    } else if (f.isDirectory) {
+                        if (f.name.equals("Android", ignoreCase = true) && depth == 0) continue
+                        walk(f, depth + 1)
+                    }
+                }
+            }
+
+            walk(storageRoot, 0)
+        }
+
+        val sortedList = itemsMap.values.toList()
+        sortFileItems(sortedList, sortOption)
     }
 
     suspend fun createFolder(parentPath: String, folderName: String): Result<FileItem> = withContext(Dispatchers.IO) {

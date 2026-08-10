@@ -57,20 +57,16 @@ fun FileGridItem(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Box(
+                FileThumbnail(
+                    fileItem = fileItem,
+                    icon = icon,
+                    iconColor = iconColor,
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(iconColor.copy(alpha = 0.15f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = fileItem.name,
-                        tint = iconColor,
-                        modifier = Modifier.size(30.dp)
-                    )
-                }
+                        .fillMaxWidth()
+                        .height(90.dp)
+                        .clip(RoundedCornerShape(14.dp)),
+                    iconSize = 34.dp
+                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 

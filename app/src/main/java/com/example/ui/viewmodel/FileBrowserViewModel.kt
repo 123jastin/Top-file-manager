@@ -204,12 +204,19 @@ class FileBrowserViewModel(application: Application) : AndroidViewModel(applicat
             if (query.isNotBlank()) {
                 val results = repository.searchFiles(query, path, categoryFilter)
                 _files.value = results
+            } else if (categoryFilter != null && categoryFilter != CategoryType.ALL) {
+                val categoryList = repository.getCategoryFiles(categoryFilter, hidden, sort)
+                _files.value = categoryList
             } else {
                 val list = repository.listDirectory(path, hidden, sort, categoryFilter)
                 _files.value = list
             }
             _isLoading.value = false
         }
+    }
+
+    fun clearCategoryFilter() {
+        activeCategoryFilter.value = null
     }
 
     private fun loadSecondaryDirectory(path: String) {

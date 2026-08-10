@@ -69,20 +69,14 @@ fun FileListItem(
                 )
             }
 
-            Box(
+            FileThumbnail(
+                fileItem = fileItem,
+                icon = icon,
+                iconColor = iconColor,
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(iconColor.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = fileItem.name,
-                    tint = iconColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
 

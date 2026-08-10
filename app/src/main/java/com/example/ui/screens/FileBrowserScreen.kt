@@ -57,17 +57,22 @@ fun FileBrowserScreen(
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val activeCategoryFilter by viewModel.activeCategoryFilter.collectAsState()
 
     val activeTasks by viewModel.repository.queueManager.tasks.collectAsState()
 
     var showCreateFolderDialog by remember { mutableStateOf(false) }
     var fileToRename by remember { mutableStateOf<FileItem?>(null) }
     var fileDetails by remember { mutableStateOf<FileItem?>(null) }
+    var fileToVault by remember { mutableStateOf<FileItem?>(null) }
+    var showVaultPinDialog by remember { mutableStateOf(false) }
+    var vaultPinInput by remember { mutableStateOf("") }
     var showCompressDialog by remember { mutableStateOf(false) }
     var showProgressSheet by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var isDualPane by remember { mutableStateOf(false) }
+    var mediaPreviewFile by remember { mutableStateOf<FileItem?>(null) }
 
     // File contextual action menu item
     var activeContextFile by remember { mutableStateOf<FileItem?>(null) }
@@ -302,6 +307,48 @@ fun FileBrowserScreen(
                         onRefresh = { viewModel.refreshCurrent() }
                     )
                 }
+
+                // Active Category Filter Banner
+                if (activeCategoryFilter != null) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.FilterList,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Category: ${activeCategoryFilter?.name?.lowercase()?.replaceFirstChar { it.uppercase() }} (${files.size} items)",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            IconButton(
+                                onClick = { viewModel.clearCategoryFilter() },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear Category Filter",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         bottomBar = {
@@ -373,7 +420,16 @@ fun FileBrowserScreen(
                                     } else if (file.isDirectory) {
                                         viewModel.navigateTo(file.path)
                                     } else {
-                                        onOpenFile(file)
+                                        val ext = file.extension.lowercase()
+                                        val mime = file.mimeType.lowercase()
+                                        val isMedia = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
+                                                ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "mp4", "mkv", "webm", "mov", "avi", "mp3", "wav", "flac", "m4a", "aac", "ogg")
+
+                                        if (isMedia) {
+                                            mediaPreviewFile = file
+                                        } else {
+                                            onOpenFile(file)
+                                        }
                                     }
                                 },
                                 onFileLongClick = { file -> viewModel.toggleSelection(file) },
@@ -415,7 +471,16 @@ fun FileBrowserScreen(
                             } else if (file.isDirectory) {
                                 viewModel.navigateTo(file.path)
                             } else {
-                                onOpenFile(file)
+                                val ext = file.extension.lowercase()
+                                val mime = file.mimeType.lowercase()
+                                val isMedia = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
+                                        ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "mp4", "mkv", "webm", "mov", "avi", "mp3", "wav", "flac", "m4a", "aac", "ogg")
+
+                                if (isMedia) {
+                                    mediaPreviewFile = file
+                                } else {
+                                    onOpenFile(file)
+                                }
                             }
                         },
                         onFileLongClick = { file -> viewModel.toggleSelection(file) },
@@ -454,6 +519,15 @@ fun FileBrowserScreen(
                             activeContextFile = null
                         },
                         leadingIcon = { Icon(Icons.Default.Star, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move to Secure Vault") },
+                        onClick = {
+                            fileToVault = file
+                            showVaultPinDialog = true
+                            activeContextFile = null
+                        },
+                        leadingIcon = { Icon(Icons.Default.Security, null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Move to Recycle Bin") },
@@ -513,6 +587,65 @@ fun FileBrowserScreen(
         )
     }
 
+    if (showVaultPinDialog && fileToVault != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showVaultPinDialog = false
+                fileToVault = null
+                vaultPinInput = ""
+            },
+            title = { Text("Move to Secure Vault") },
+            text = {
+                Column {
+                    Text("Enter your Vault PIN to encrypt and lock '${fileToVault!!.name}'.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = vaultPinInput,
+                        onValueChange = { if (it.length <= 6) vaultPinInput = it },
+                        label = { Text("Vault PIN") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val target = fileToVault!!
+                        val pin = vaultPinInput
+                        showVaultPinDialog = false
+                        fileToVault = null
+                        vaultPinInput = ""
+                        scope.launch {
+                            val res = viewModel.repository.vaultEngine.lockFileIntoVault(File(target.path), pin)
+                            res.fold(
+                                onSuccess = {
+                                    viewModel.refreshCurrent()
+                                    Toast.makeText(context, "File encrypted & moved to Secure Vault", Toast.LENGTH_SHORT).show()
+                                },
+                                onFailure = { err ->
+                                    Toast.makeText(context, err.localizedMessage ?: "Failed to lock file", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                ) {
+                    Text("Encrypt & Lock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showVaultPinDialog = false
+                    fileToVault = null
+                    vaultPinInput = ""
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showCompressDialog) {
         CompressDialog(
             selectedCount = selectedFiles.size,
@@ -530,6 +663,25 @@ fun FileBrowserScreen(
             tasks = activeTasks.values.toList(),
             onCancelTask = { taskId -> viewModel.repository.queueManager.cancelTask(taskId) },
             onDismiss = { showProgressSheet = false }
+        )
+    }
+
+    if (mediaPreviewFile != null) {
+        MediaPreviewDialog(
+            fileItem = mediaPreviewFile!!,
+            onDismiss = { mediaPreviewFile = null },
+            onOpenExternal = {
+                val target = mediaPreviewFile!!
+                mediaPreviewFile = null
+                onOpenFile(target)
+            },
+            onDeleteFile = { target ->
+                mediaPreviewFile = null
+                scope.launch {
+                    viewModel.repository.moveToRecycleBin(target.path)
+                    viewModel.refreshCurrent()
+                }
+            }
         )
     }
 }

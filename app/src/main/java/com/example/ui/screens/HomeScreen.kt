@@ -41,7 +41,7 @@ fun HomeScreen(
     onNavigateToVault: () -> Unit,
     onNavigateToRecycleBin: () -> Unit,
     onSearchClick: () -> Unit,
-    isPro: Boolean
+    isPro: Boolean = true
 ) {
     val favorites by viewModel.favorites.collectAsState()
     val bookmarks by viewModel.bookmarks.collectAsState()
@@ -82,12 +82,6 @@ fun HomeScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            if (!isPro) {
-                item {
-                    AdBanner()
-                }
-            }
-
             // Storage Locations Section
             item {
                 SectionHeader(title = "Storage Locations")

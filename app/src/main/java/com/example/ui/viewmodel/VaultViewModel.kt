@@ -55,4 +55,17 @@ class VaultViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    fun deleteVaultFile(vaultEntity: VaultEntity, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val encFile = File(vaultEntity.encryptedPath)
+                if (encFile.exists()) encFile.delete()
+                repository.vaultDao.deleteById(vaultEntity.id)
+                onResult(true, "Item deleted from Vault")
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Failed")
+            }
+        }
+    }
 }
