@@ -22,6 +22,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.example.data.model.*
+import com.example.monetization.AdsManager
+import com.example.monetization.FileListItemEntry
 import com.example.ui.components.*
 import com.example.ui.viewmodel.FileBrowserViewModel
 import kotlinx.coroutines.launch
@@ -88,6 +90,13 @@ fun CategoryViewScreen(
             categoryFiles.filter { it.name.contains(searchQuery, ignoreCase = true) }
         }
         viewModel.repository.fileEngine.sortFileItems(list, sortOption)
+    }
+
+    val adsManager = remember { AdsManager(context) }
+    val isAdsActive by adsManager.isAdsActive.collectAsState()
+
+    val displayItems = remember(displayFiles, adsManager.failedSlots.toSet(), isAdsActive) {
+        AdsManager.buildDisplayItems(displayFiles, adsManager.failedSlots.toSet(), isAdsActive)
     }
 
     Scaffold(
@@ -277,26 +286,49 @@ fun CategoryViewScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(displayFiles, key = { it.path }) { file ->
-                                FileGridItem(
-                                    fileItem = file,
-                                    isSelected = false,
-                                    isSelectionMode = false,
-                                    onClick = {
-                                        val ext = file.extension.lowercase()
-                                        val mime = file.mimeType.lowercase()
-                                        val isImg = mime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
-                                        val isZip = ext in listOf("zip", "rar", "7z", "tar", "gz", "apk")
-                                        if (isImg) {
-                                            fullScreenImageFile = file
-                                        } else if (isZip) {
-                                            fileToExtract = file
-                                        } else {
-                                            onOpenFile(file)
+                            items(
+                                items = displayItems,
+                                key = { entry ->
+                                    when (entry) {
+                                        is FileListItemEntry.FileEntry -> "file_${entry.file.path}"
+                                        is FileListItemEntry.AdEntry -> "ad_slot_${entry.slotIndex}"
+                                    }
+                                }
+                            ) { entry ->
+                                when (entry) {
+                                    is FileListItemEntry.FileEntry -> {
+                                        val file = entry.file
+                                        FileGridItem(
+                                            fileItem = file,
+                                            isSelected = false,
+                                            isSelectionMode = false,
+                                            onClick = {
+                                                val ext = file.extension.lowercase()
+                                                val mime = file.mimeType.lowercase()
+                                                val isImg = mime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
+                                                val isZip = ext in listOf("zip", "rar", "7z", "tar", "gz", "apk")
+                                                if (isImg) {
+                                                    fullScreenImageFile = file
+                                                } else if (isZip) {
+                                                    fileToExtract = file
+                                                } else {
+                                                    onOpenFile(file)
+                                                }
+                                            },
+                                            onLongClick = { activeContextFile = file }
+                                        )
+                                    }
+                                    is FileListItemEntry.AdEntry -> {
+                                        LaunchedEffect(entry.slotIndex) {
+                                            adsManager.loadAdForSlot(entry.slotIndex)
                                         }
-                                    },
-                                    onLongClick = { activeContextFile = file }
-                                )
+                                        val nativeAd = adsManager.getAdForSlot(entry.slotIndex)
+                                        NativeAdGridItem(
+                                            nativeAd = nativeAd,
+                                            isLoading = adsManager.isLoadingSlot(entry.slotIndex)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -306,27 +338,50 @@ fun CategoryViewScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(displayFiles, key = { it.path }) { file ->
-                                FileListItem(
-                                    fileItem = file,
-                                    isSelected = false,
-                                    isSelectionMode = false,
-                                    onClick = {
-                                        val ext = file.extension.lowercase()
-                                        val mime = file.mimeType.lowercase()
-                                        val isImg = mime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
-                                        val isZip = ext in listOf("zip", "rar", "7z", "tar", "gz", "apk")
-                                        if (isImg) {
-                                            fullScreenImageFile = file
-                                        } else if (isZip) {
-                                            fileToExtract = file
-                                        } else {
-                                            onOpenFile(file)
+                            items(
+                                items = displayItems,
+                                key = { entry ->
+                                    when (entry) {
+                                        is FileListItemEntry.FileEntry -> "file_${entry.file.path}"
+                                        is FileListItemEntry.AdEntry -> "ad_slot_${entry.slotIndex}"
+                                    }
+                                }
+                            ) { entry ->
+                                when (entry) {
+                                    is FileListItemEntry.FileEntry -> {
+                                        val file = entry.file
+                                        FileListItem(
+                                            fileItem = file,
+                                            isSelected = false,
+                                            isSelectionMode = false,
+                                            onClick = {
+                                                val ext = file.extension.lowercase()
+                                                val mime = file.mimeType.lowercase()
+                                                val isImg = mime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
+                                                val isZip = ext in listOf("zip", "rar", "7z", "tar", "gz", "apk")
+                                                if (isImg) {
+                                                    fullScreenImageFile = file
+                                                } else if (isZip) {
+                                                    fileToExtract = file
+                                                } else {
+                                                    onOpenFile(file)
+                                                }
+                                            },
+                                            onLongClick = { activeContextFile = file },
+                                            onMenuClick = { activeContextFile = file }
+                                        )
+                                    }
+                                    is FileListItemEntry.AdEntry -> {
+                                        LaunchedEffect(entry.slotIndex) {
+                                            adsManager.loadAdForSlot(entry.slotIndex)
                                         }
-                                    },
-                                    onLongClick = { activeContextFile = file },
-                                    onMenuClick = { activeContextFile = file }
-                                )
+                                        val nativeAd = adsManager.getAdForSlot(entry.slotIndex)
+                                        NativeAdListItem(
+                                            nativeAd = nativeAd,
+                                            isLoading = adsManager.isLoadingSlot(entry.slotIndex)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

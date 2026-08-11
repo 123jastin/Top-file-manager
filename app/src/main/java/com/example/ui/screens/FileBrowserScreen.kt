@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.core.content.FileProvider
 import com.example.data.model.*
+import com.example.monetization.AdsManager
+import com.example.monetization.FileListItemEntry
 import com.example.ui.components.*
 import com.example.ui.viewmodel.FileBrowserViewModel
 import java.io.File
@@ -835,8 +837,17 @@ private fun FileGridOrList(
     isSelectionMode: Boolean,
     onFileClick: (FileItem) -> Unit,
     onFileLongClick: (FileItem) -> Unit,
-    onMenuClick: (FileItem) -> Unit
+    onMenuClick: (FileItem) -> Unit,
+    isPro: Boolean = false
 ) {
+    val context = LocalContext.current
+    val adsManager = remember { AdsManager(context) }
+    val isAdsActive by adsManager.isAdsActive.collectAsState()
+
+    val displayItems = remember(files, adsManager.failedSlots.toSet(), isAdsActive, isPro) {
+        AdsManager.buildDisplayItems(files, adsManager.failedSlots.toSet(), isAdsActive && !isPro)
+    }
+
     when (viewMode) {
         ViewMode.GRID -> {
             LazyVerticalGrid(
@@ -845,14 +856,37 @@ private fun FileGridOrList(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(files, key = { it.path }) { item ->
-                    FileGridItem(
-                        fileItem = item,
-                        isSelected = selectedFiles.contains(item),
-                        isSelectionMode = isSelectionMode,
-                        onClick = { onFileClick(item) },
-                        onLongClick = { onFileLongClick(item) }
-                    )
+                items(
+                    items = displayItems,
+                    key = { entry ->
+                        when (entry) {
+                            is FileListItemEntry.FileEntry -> "file_${entry.file.path}"
+                            is FileListItemEntry.AdEntry -> "ad_slot_${entry.slotIndex}"
+                        }
+                    }
+                ) { entry ->
+                    when (entry) {
+                        is FileListItemEntry.FileEntry -> {
+                            val item = entry.file
+                            FileGridItem(
+                                fileItem = item,
+                                isSelected = selectedFiles.contains(item),
+                                isSelectionMode = isSelectionMode,
+                                onClick = { onFileClick(item) },
+                                onLongClick = { onFileLongClick(item) }
+                            )
+                        }
+                        is FileListItemEntry.AdEntry -> {
+                            LaunchedEffect(entry.slotIndex) {
+                                adsManager.loadAdForSlot(entry.slotIndex)
+                            }
+                            val nativeAd = adsManager.getAdForSlot(entry.slotIndex)
+                            NativeAdGridItem(
+                                nativeAd = nativeAd,
+                                isLoading = adsManager.isLoadingSlot(entry.slotIndex)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -860,15 +894,38 @@ private fun FileGridOrList(
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                items(files, key = { it.path }) { item ->
-                    FileListItem(
-                        fileItem = item,
-                        isSelected = selectedFiles.contains(item),
-                        isSelectionMode = isSelectionMode,
-                        onClick = { onFileClick(item) },
-                        onLongClick = { onFileLongClick(item) },
-                        onMenuClick = { onMenuClick(item) }
-                    )
+                items(
+                    items = displayItems,
+                    key = { entry ->
+                        when (entry) {
+                            is FileListItemEntry.FileEntry -> "file_${entry.file.path}"
+                            is FileListItemEntry.AdEntry -> "ad_slot_${entry.slotIndex}"
+                        }
+                    }
+                ) { entry ->
+                    when (entry) {
+                        is FileListItemEntry.FileEntry -> {
+                            val item = entry.file
+                            FileListItem(
+                                fileItem = item,
+                                isSelected = selectedFiles.contains(item),
+                                isSelectionMode = isSelectionMode,
+                                onClick = { onFileClick(item) },
+                                onLongClick = { onFileLongClick(item) },
+                                onMenuClick = { onMenuClick(item) }
+                            )
+                        }
+                        is FileListItemEntry.AdEntry -> {
+                            LaunchedEffect(entry.slotIndex) {
+                                adsManager.loadAdForSlot(entry.slotIndex)
+                            }
+                            val nativeAd = adsManager.getAdForSlot(entry.slotIndex)
+                            NativeAdListItem(
+                                nativeAd = nativeAd,
+                                isLoading = adsManager.isLoadingSlot(entry.slotIndex)
+                            )
+                        }
+                    }
                 }
             }
         }

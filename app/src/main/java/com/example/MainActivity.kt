@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        com.example.monetization.AdsManager.initialize(this)
+
         requestStoragePermissions()
 
         setContent {
