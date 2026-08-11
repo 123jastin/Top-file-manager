@@ -81,6 +81,10 @@ class FileManagerRepository(
         return fileEngine.createFolder(parentPath, name)
     }
 
+    suspend fun createNewFile(parentPath: String, name: String, content: String = ""): Result<FileItem> {
+        return fileEngine.createNewFile(parentPath, name, content)
+    }
+
     suspend fun renameFile(filePath: String, newName: String): Result<FileItem> {
         return fileEngine.renameFile(filePath, newName)
     }

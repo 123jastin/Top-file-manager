@@ -62,6 +62,9 @@ fun FileBrowserScreen(
     val activeTasks by viewModel.repository.queueManager.tasks.collectAsState()
 
     var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var showCreateFileDialog by remember { mutableStateOf(false) }
+    var fileToExtract by remember { mutableStateOf<FileItem?>(null) }
+    var showFabMenu by remember { mutableStateOf(false) }
     var fileToRename by remember { mutableStateOf<FileItem?>(null) }
     var fileDetails by remember { mutableStateOf<FileItem?>(null) }
     var fileToVault by remember { mutableStateOf<FileItem?>(null) }
@@ -210,6 +213,14 @@ fun FileBrowserScreen(
                                     showOptionsMenu = false
                                 },
                                 leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("New File / Note") },
+                                onClick = {
+                                    showCreateFileDialog = true
+                                    showOptionsMenu = false
+                                },
+                                leadingIcon = { Icon(Icons.Default.NoteAdd, null) }
                             )
                             DropdownMenuItem(
                                 text = { Text("New Tab") },
@@ -385,13 +396,40 @@ fun FileBrowserScreen(
         },
         floatingActionButton = {
             if (!isSelectionMode) {
-                FloatingActionButton(
-                    onClick = { showCreateFolderDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.testTag("fab_create_folder")
-                ) {
-                    Icon(imageVector = Icons.Default.CreateNewFolder, contentDescription = "New Folder")
+                Box {
+                    FloatingActionButton(
+                        onClick = { showFabMenu = !showFabMenu },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.testTag("fab_create")
+                    ) {
+                        Icon(
+                            imageVector = if (showFabMenu) Icons.Default.Close else Icons.Default.Add,
+                            contentDescription = "New Item"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showFabMenu,
+                        onDismissRequest = { showFabMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("New Folder") },
+                            onClick = {
+                                showFabMenu = false
+                                showCreateFolderDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.CreateNewFolder, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("New File / Document") },
+                            onClick = {
+                                showFabMenu = false
+                                showCreateFileDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.NoteAdd, null) }
+                        )
+                    }
                 }
             }
         }
@@ -404,7 +442,11 @@ fun FileBrowserScreen(
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else if (files.isEmpty()) {
-                EmptyState(query = searchQuery)
+                EmptyState(
+                    query = searchQuery,
+                    onCreateFolderClick = { showCreateFolderDialog = true },
+                    onCreateFileClick = { showCreateFileDialog = true }
+                )
             } else {
                 if (isDualPane) {
                     Row(modifier = Modifier.fillMaxSize()) {
@@ -420,6 +462,8 @@ fun FileBrowserScreen(
                                         viewModel.toggleSelection(file)
                                     } else if (file.isDirectory) {
                                         viewModel.navigateTo(file.path)
+                                    } else if (file.extension in listOf("zip", "rar", "7z", "tar", "gz", "apk")) {
+                                        fileToExtract = file
                                     } else {
                                         onOpenFile(file)
                                     }
@@ -492,6 +536,29 @@ fun FileBrowserScreen(
                     val fileMime = file.mimeType.lowercase()
                     val isImg = fileMime.startsWith("image/") || fileExt in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
                     val isAudVid = fileMime.startsWith("audio/") || fileMime.startsWith("video/") || fileExt in listOf("mp3", "wav", "flac", "m4a", "aac", "mp4", "mkv", "webm", "avi")
+                    val isZipArchive = fileExt in listOf("zip", "rar", "7z", "tar", "gz", "apk")
+
+                    if (isZipArchive) {
+                        DropdownMenuItem(
+                            text = { Text("Extract / Unzip") },
+                            onClick = {
+                                activeContextFile = null
+                                fileToExtract = file
+                            },
+                            leadingIcon = { Icon(Icons.Default.Unarchive, null) }
+                        )
+                    }
+
+                    DropdownMenuItem(
+                        text = { Text("Compress to ZIP") },
+                        onClick = {
+                            viewModel.clearSelection()
+                            viewModel.toggleSelection(file)
+                            showCompressDialog = true
+                            activeContextFile = null
+                        },
+                        leadingIcon = { Icon(Icons.Default.FolderZip, null) }
+                    )
 
                     if (isImg) {
                         DropdownMenuItem(
@@ -565,12 +632,45 @@ fun FileBrowserScreen(
     if (showCreateFolderDialog) {
         CreateFolderDialog(
             onConfirm = { name ->
-                viewModel.createFolder(name) { success, msg ->
+                viewModel.createFolder(name) { success, msg, createdDir ->
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    if (success && createdDir != null) {
+                        viewModel.navigateTo(createdDir.path)
+                    }
                 }
                 showCreateFolderDialog = false
             },
             onDismiss = { showCreateFolderDialog = false }
+        )
+    }
+
+    if (showCreateFileDialog) {
+        val folderName = currentTab?.name ?: "Folder"
+        CreateFileDialog(
+            folderName = folderName,
+            onConfirm = { fileName, content ->
+                viewModel.createNewFile(fileName, content) { success, msg, _ ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+                showCreateFileDialog = false
+            },
+            onDismiss = { showCreateFileDialog = false }
+        )
+    }
+
+    if (fileToExtract != null) {
+        ExtractDialog(
+            zipFileItem = fileToExtract!!,
+            previewEntriesProvider = { file ->
+                viewModel.repository.archiveEngine.previewZipContents(file)
+            },
+            onExtractConfirm = { targetDir ->
+                val targetZip = fileToExtract!!
+                fileToExtract = null
+                viewModel.extractZip(File(targetZip.path), targetDir)
+                Toast.makeText(context, "Extracting archive in background...", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { fileToExtract = null }
         )
     }
 
@@ -776,7 +876,11 @@ private fun FileGridOrList(
 }
 
 @Composable
-private fun EmptyState(query: String) {
+private fun EmptyState(
+    query: String,
+    onCreateFolderClick: () -> Unit,
+    onCreateFileClick: () -> Unit
+) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -794,6 +898,21 @@ private fun EmptyState(query: String) {
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (query.isBlank()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onCreateFolderClick) {
+                        Icon(Icons.Default.CreateNewFolder, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("New Folder")
+                    }
+                    OutlinedButton(onClick = onCreateFileClick) {
+                        Icon(Icons.Default.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("New File")
+                    }
+                }
+            }
         }
     }
 }

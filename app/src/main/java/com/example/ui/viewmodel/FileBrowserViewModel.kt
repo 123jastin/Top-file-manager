@@ -267,16 +267,30 @@ class FileBrowserViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun createFolder(name: String, onResult: (Boolean, String) -> Unit) {
-        val tab = currentTab.value ?: return
+    fun createFolder(name: String, targetPath: String? = null, onResult: (Boolean, String, FileItem?) -> Unit) {
+        val path = targetPath ?: currentTab.value?.currentPath ?: return
         viewModelScope.launch {
-            val res = repository.createFolder(tab.currentPath, name)
+            val res = repository.createFolder(path, name)
             res.fold(
-                onSuccess = {
+                onSuccess = { createdDir ->
                     refreshCurrent()
-                    onResult(true, "Folder created")
+                    onResult(true, "Folder created", createdDir)
                 },
-                onFailure = { err -> onResult(false, err.localizedMessage ?: "Failed") }
+                onFailure = { err -> onResult(false, err.localizedMessage ?: "Failed", null) }
+            )
+        }
+    }
+
+    fun createNewFile(name: String, content: String = "", targetPath: String? = null, onResult: (Boolean, String, FileItem?) -> Unit) {
+        val path = targetPath ?: currentTab.value?.currentPath ?: return
+        viewModelScope.launch {
+            val res = repository.createNewFile(path, name, content)
+            res.fold(
+                onSuccess = { createdFile ->
+                    refreshCurrent()
+                    onResult(true, "File created successfully", createdFile)
+                },
+                onFailure = { err -> onResult(false, err.localizedMessage ?: "Failed", null) }
             )
         }
     }

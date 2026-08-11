@@ -235,22 +235,31 @@ class FileEngine(private val context: Context) {
     }
 
     private val categoryCache = java.util.concurrent.ConcurrentHashMap<CategoryType, Pair<Long, List<FileItem>>>()
-    private val CACHE_TTL_MS = 15_000L
+    private val CACHE_TTL_MS = 60_000L
 
     fun clearCategoryCache() {
         categoryCache.clear()
     }
 
+    fun getCachedFilesByCategory(
+        category: CategoryType,
+        sortOption: FileSortOption = FileSortOption()
+    ): List<FileItem>? {
+        val cached = categoryCache[category]?.second
+        return if (cached != null) sortFileItems(cached, sortOption) else null
+    }
+
     suspend fun getFilesByCategory(
         category: CategoryType,
         showHidden: Boolean = false,
-        sortOption: FileSortOption = FileSortOption()
+        sortOption: FileSortOption = FileSortOption(),
+        forceRefresh: Boolean = false
     ): List<FileItem> = withContext(Dispatchers.IO) {
         if (category == CategoryType.ALL) return@withContext emptyList()
 
         val now = System.currentTimeMillis()
         val cached = categoryCache[category]
-        if (cached != null && (now - cached.first) < CACHE_TTL_MS) {
+        if (!forceRefresh && cached != null && (now - cached.first) < CACHE_TTL_MS) {
             return@withContext sortFileItems(cached.second, sortOption)
         }
 
@@ -352,6 +361,25 @@ class FileEngine(private val context: Context) {
             val created = newDir.mkdirs()
             if (!created && !newDir.exists()) throw IllegalStateException("Failed to create folder")
             createFileItem(newDir)
+        }
+    }
+
+    suspend fun createNewFile(parentPath: String, fileName: String, initialContent: String = ""): Result<FileItem> = withContext(Dispatchers.IO) {
+        runCatching {
+            var sanitized = fileName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            if (sanitized.isEmpty()) throw IllegalArgumentException("File name cannot be empty")
+            if (!sanitized.contains(".")) {
+                sanitized += ".txt"
+            }
+            val newFile = File(parentPath, sanitized)
+            if (newFile.exists()) throw IllegalStateException("File '$sanitized' already exists")
+            newFile.parentFile?.mkdirs()
+            val created = newFile.createNewFile()
+            if (!created && !newFile.exists()) throw IllegalStateException("Failed to create file")
+            if (initialContent.isNotEmpty()) {
+                newFile.writeText(initialContent)
+            }
+            createFileItem(newFile)
         }
     }
 

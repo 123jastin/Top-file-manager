@@ -174,10 +174,7 @@ fun MainAppNavHost(
                         navController.navigate(NavScreen.Browser.route)
                     },
                     onNavigateToCategory = { category ->
-                        val root = Environment.getExternalStorageDirectory()?.absolutePath ?: ""
-                        browserViewModel.navigateTo(root)
-                        browserViewModel.activeCategoryFilter.value = category
-                        navController.navigate(NavScreen.Browser.route)
+                        navController.navigate("category/${category.name}")
                     },
                     onNavigateToTools = { navController.navigate(NavScreen.Tools.route) },
                     onNavigateToVault = { navController.navigate(NavScreen.Vault.route) },
@@ -233,6 +230,28 @@ fun MainAppNavHost(
                 RecycleBinScreen(
                     viewModel = homeViewModel,
                     onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable("category/{categoryName}") { backStackEntry ->
+                val categoryName = backStackEntry.arguments?.getString("categoryName") ?: CategoryType.IMAGES.name
+                val categoryType = try { CategoryType.valueOf(categoryName) } catch (e: Exception) { CategoryType.IMAGES }
+                CategoryViewScreen(
+                    categoryType = categoryType,
+                    viewModel = browserViewModel,
+                    onBackClick = { navController.popBackStack() },
+                    onOpenFile = { fileItem ->
+                        val ext = fileItem.extension.lowercase()
+                        if (ext in listOf("txt", "json", "xml", "csv", "md", "html", "log")) {
+                            val encoded = URLEncoder.encode(fileItem.path, StandardCharsets.UTF_8.toString())
+                            navController.navigate("text_editor/$encoded")
+                        } else {
+                            openFileExternal(context, fileItem.path, fileItem.mimeType) { filePath ->
+                                val encoded = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
+                                navController.navigate("text_editor/$encoded")
+                            }
+                        }
+                    }
                 )
             }
 
@@ -299,18 +318,13 @@ private fun openFileExternal(
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
-        val packageManager = context.packageManager
-        val resolvedActivities = packageManager.queryIntentActivities(intent, 0)
-        val externalApps = resolvedActivities.filter { it.activityInfo.packageName != context.packageName }
-
-        if (externalApps.isNotEmpty()) {
+        try {
             context.startActivity(chooserIntent)
-        } else {
-            // If no external app found, attempt built-in text editor for text/doc or show message
+        } catch (e: Exception) {
             if (ext in listOf("txt", "json", "xml", "csv", "md", "html", "log", "pdf", "doc", "docx") && onFallbackText != null) {
                 onFallbackText(filePath)
             } else {
-                context.startActivity(chooserIntent)
+                Toast.makeText(context, "No app found to open ${file.name}", Toast.LENGTH_SHORT).show()
             }
         }
     } catch (e: Exception) {
